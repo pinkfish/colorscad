@@ -9,10 +9,24 @@ Both colorscad and 3mfmerge changes are included here. Unless explicitly mention
 
 ## [Unreleased]
 
+## [0.8.0] - 2025-11-24
+
+### Added
+
+- Add Docker support (thanks: droosma)
+
 ### Fixed
 
 - Use 'strict' mode in colorscad.sh, and improve error reporting/script comments
 - Improve clarity/robustness of using OPENSCAD_CMD
+
+### Added - 3mfmerge
+
+- Bump Lib3MF version used by FetchContent (i.e. when building from source if not yet installed) to v2.4.1
+
+### Fixed - 3mfmerge
+
+- Build: automatically set number of parallel workers
 
 ## [0.7.0] - 2025-05-26
 
@@ -181,7 +195,8 @@ Both colorscad and 3mfmerge changes are included here. Unless explicitly mention
 
 - Everything! Only supports creating a colored .amf file.
 
-[Unreleased]: https://github.com/jschobben/colorscad/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/jschobben/colorscad/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/jschobben/colorscad/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/jschobben/colorscad/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/jschobben/colorscad/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/jschobben/colorscad/compare/v0.6.0...v0.6.1
