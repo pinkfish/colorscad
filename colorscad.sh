@@ -24,7 +24,8 @@ Options
   -o ARG  Output file: it must not yet exist (unless option -f is used),
           and must have as extension either '.amf' or '.3mf'
   -p ARG  The path to the openscad binary to use
-  -c ARG  The color to alwas include
+  -c ARG  The color to always include
+  -r ARG  The color to ignore when generating 3mf
   -v      Verbose logging: mostly, this enables the OpenSCAD rendering stats output (default disabled)
 
 Environment variables
@@ -89,6 +90,9 @@ while getopts :fhi:j:k:o:p:c:r:v opt; do
 		;;
 		c)
 		    ALWAYS_COLOR="$OPTARG"
+		;;
+		r)
+		    IGNORRE_COLOR="$OPTARG"
 		;;
 		\?)
 			echo "Unknown option: '-$OPTARG'. See help (-h)."
@@ -223,10 +227,12 @@ echo "Get list of used colors"
 # means more geometry; we want to start the biggest jobs first to improve parallelism.
 COLOR_ID_TAG="colorid_$$_${RANDOM}"
 COLORS=$(
-	${OPENSCAD_CMD} "$INPUT_CSG" -o "${TEMPDIR}/no_color.stl" -D "module color(c) {echo(${COLOR_ID_TAG}=str(c));}" 2>&1 |
 	# If the model is designed properly, all geometry has been assigned a color, which means the "no_color.stl" produced here is empty.
 	# Therefore this command is supposed to return a non-zero exit status, i.e. fail, which should be ignored.
 	OPENSCAD_OUTPUT=$("$OPENSCAD_CMD" "$INPUT_CSG" -o "${TEMPDIR}/no_color.stl" -D "module color(c) {echo(${COLOR_ID_TAG}=str(c));}" 2>&1 || true)
+	if [ $VERBOSE -eq 1 ]; then
+	  echo ${OPENSCAD_OUTPUT}
+	fi
 	# Furthermore OpenSCAD's "echo" output goes to stderr, so we've had to capture that above.
 	# To still show some useful output in case there's an actual problem, just display the output minus any ECHOs and the expected error message.
 	# OpenSCAD should normally not output any statistics in case of an error, so no other output is expected.
@@ -286,7 +292,6 @@ function render_color {
 
 	{
 		local OUT_FILE="${TEMPDIR}/intermediates/${COLOR}.${FORMAT}"
-		local OUT_FILE="${TEMPDIR}/${COLOR}.${FORMAT}"
 		echo "Starting $COLOR"
 		local EXTRA_ARGS=
 		if [ $VERBOSE -ne 1 ]; then
@@ -295,10 +300,10 @@ function render_color {
 		if [ $VERBOSE -eq 1 ]; then
   		    echo ${OPENSCAD_CMD} "$INPUT_CSG" -o "$OUT_FILE" $EXTRA_ARGS  -D "\$colored = false; module color(c) {if (\$colored) {children();} else {\$colored = true; if (str(c) == \"${COLOR}\" || str(c) == \"${ALWAYS_COLOR}]\") children();}}"
 		fi
-		${OPENSCAD_CMD} "$INPUT_CSG" -o "$OUT_FILE" $EXTRA_ARGS -D "\$colored = false; module color(c) {if (\$colored) {children();} else {\$colored = true; if (str(c) == \"${COLOR}\" || str(c) == \"${ALWAYS_COLOR}\") children(); }}" || 			
+		${OPENSCAD_CMD} "$INPUT_CSG" -o "$OUT_FILE" $EXTRA_ARGS -D "\$colored = false; module color(c) {if (\$colored) {children();} else {\$colored = true; if (str(c) == \"${COLOR}\" || str(c) == \"${ALWAYS_COLOR}\") children(); }}" || {
 		    echo "Warning: OpenSCAD failed with error $? when trying to generate '$OUT_FILE'. Proceeding regardless..."
 			# Don't treat this as fatal error, the model might just contain no geometry for this color
-	    }
+		}
 		if [ -s "$OUT_FILE" ]; then
 			echo "Finished at ${OUT_FILE}"
 		elif [ -e "$OUT_FILE" ]; then
@@ -316,8 +321,8 @@ for COLOR in $COLORS; do
 		# Wait for one job to finish, before continuing
 		wait_n
 	fi
-	if [ "$COLOR" = "[0.184314, 0.309804, 0.309804, 1]]" ]; then
-	    echo "Ignoring darkslategrey"
+	if [ "$COLOR" = "${IGNORE_COLOR}" ]; then
+	    echo "Ignoring ${IGNORE_COLOR}"
 	else
   	    #  Run job in background, and prefix all terminal output with the job ID and color to show progress
 	    render_color "$COLOR" | sed_u "s/^/${JOB_ID}\/${COLOR_COUNT} /" &
