@@ -23,6 +23,8 @@ Options
           and its parent directory must be writable by this script.
   -o ARG  Output file: it must not yet exist (unless option -f is used),
           and must have as extension either '.amf' or '.3mf'
+  -p ARG  The path to the openscad binary to use
+  -c ARG  The color to alwas include
   -v      Verbose logging: mostly, this enables the OpenSCAD rendering stats output (default disabled)
 
 Environment variables
@@ -33,14 +35,20 @@ Example which also includes some openscad options at the end:
 EOF
 }
 
+if [ -n "${OPENSCAD_CMD-}" ]; then
+	echo "OpenSCAD binary in use, overridden via OPENSCAD_CMD: $(command -v "$OPENSCAD_CMD" || echo "not found ('${OPENSCAD_CMD}')")"
+fi
+: "${OPENSCAD_CMD:=openscad}"
 
 FORCE=0
 INPUT=
 INTERMEDIATES_DIR=
 OUTPUT=
-PARALLEL_JOB_LIMIT=8
+PARALLEL_JOB_LIMIT=3
 VERBOSE=0
-while getopts :fhi:j:k:o:v opt; do
+ALWAYS_COLOR=None
+IGNORE_COLOR=None
+while getopts :fhi:j:k:o:p:c:r:v opt; do
 	case "$opt" in
 		f)
 			FORCE=1;
@@ -73,8 +81,14 @@ while getopts :fhi:j:k:o:v opt; do
 			fi
 			OUTPUT="$OPTARG"
 		;;
+		p)
+		  OPENSCAD_CMD="$OPTARG"
+		;;  
 		v)
 			VERBOSE=1
+		;;
+		c)
+		    ALWAYS_COLOR="$OPTARG"
 		;;
 		\?)
 			echo "Unknown option: '-$OPTARG'. See help (-h)."
@@ -86,10 +100,6 @@ done
 shift "$((OPTIND-1))"
 OPENSCAD_EXTRA=("$@")
 
-if [ -n "${OPENSCAD_CMD-}" ]; then
-	echo "OpenSCAD binary in use, overridden via OPENSCAD_CMD: $(command -v "$OPENSCAD_CMD" || echo "not found ('${OPENSCAD_CMD}')")"
-fi
-: "${OPENSCAD_CMD:=openscad}"
 if ! command -v "$OPENSCAD_CMD" &> /dev/null; then
 	echo "Error: ${OPENSCAD_CMD} command not found! Make sure it's in your PATH."
 	exit 1
@@ -146,9 +156,10 @@ if [ "$FORMAT" != amf ] && [ "$FORMAT" != 3mf ]; then
 	exit 1
 fi
 
+
 if [ "$FORMAT" = 3mf ]; then
 	# Check if openscad was built with 3mf support
-	if ! "$OPENSCAD_CMD" --info 2>&1 | grep '^lib3mf version: ' | grep -qv 'not enabled'; then
+	if ! ${OPENSCAD_CMD} --info 2>&1 | grep '^lib3mf version: ' | grep -qv 'not enabled'; then
 		echo "Warning: your openscad version does not seem to have 3MF support, see 'openscad --info'."
 		echo "Either update it, or use AMF output."
 		echo
@@ -194,6 +205,9 @@ mkdir "${TEMPDIR}/intermediates"
 trap "rm -Rf '$(pwd)/${INPUT_CSG}' '$(pwd)/${TEMPDIR}'" EXIT
 
 # Convert input to a .csg file, mainly to resolve named colors. Also to evaluate functions etc. only once.
+if [ $VERBOSE -eq 1 ]; then
+   echo "$OPENSCAD_CMD" "$INPUT" -o "$INPUT_CSG" ${OPENSCAD_EXTRA[@]+"${OPENSCAD_EXTRA[@]}"}
+fi
 "$OPENSCAD_CMD" "$INPUT" -o "$INPUT_CSG" ${OPENSCAD_EXTRA[@]+"${OPENSCAD_EXTRA[@]}"}
 
 if ! [ -s "$INPUT_CSG" ]; then
@@ -209,6 +223,7 @@ echo "Get list of used colors"
 # means more geometry; we want to start the biggest jobs first to improve parallelism.
 COLOR_ID_TAG="colorid_$$_${RANDOM}"
 COLORS=$(
+	${OPENSCAD_CMD} "$INPUT_CSG" -o "${TEMPDIR}/no_color.stl" -D "module color(c) {echo(${COLOR_ID_TAG}=str(c));}" 2>&1 |
 	# If the model is designed properly, all geometry has been assigned a color, which means the "no_color.stl" produced here is empty.
 	# Therefore this command is supposed to return a non-zero exit status, i.e. fail, which should be ignored.
 	OPENSCAD_OUTPUT=$("$OPENSCAD_CMD" "$INPUT_CSG" -o "${TEMPDIR}/no_color.stl" -D "module color(c) {echo(${COLOR_ID_TAG}=str(c));}" 2>&1 || true)
@@ -253,7 +268,7 @@ if [ -z "$COLORS" ]; then
 	exit 1
 fi
 COLOR_COUNT="$(echo "$COLORS" | wc -l)"
-echo "${COLOR_COUNT} unique colors were found."
+echo "${COLOR_COUNT} unique colors were found ${COLORS}."
 if [ $VERBOSE -eq 1 ]; then
 	echo
 	echo "List of colors found:"
@@ -271,15 +286,19 @@ function render_color {
 
 	{
 		local OUT_FILE="${TEMPDIR}/intermediates/${COLOR}.${FORMAT}"
-		echo "Starting"
+		local OUT_FILE="${TEMPDIR}/${COLOR}.${FORMAT}"
+		echo "Starting $COLOR"
 		local EXTRA_ARGS=
 		if [ $VERBOSE -ne 1 ]; then
 			EXTRA_ARGS=--quiet
 		fi
-		"$OPENSCAD_CMD" "$INPUT_CSG" -o "$OUT_FILE" $EXTRA_ARGS -D "\$colored = false; module color(c) {if (\$colored) {children();} else {\$colored = true; if (str(c) == \"${COLOR}\") children();}}" || {
-			echo "Warning: OpenSCAD failed with error $? when trying to generate '$OUT_FILE'. Proceeding regardless..."
+		if [ $VERBOSE -eq 1 ]; then
+  		    echo ${OPENSCAD_CMD} "$INPUT_CSG" -o "$OUT_FILE" $EXTRA_ARGS  -D "\$colored = false; module color(c) {if (\$colored) {children();} else {\$colored = true; if (str(c) == \"${COLOR}\" || str(c) == \"${ALWAYS_COLOR}]\") children();}}"
+		fi
+		${OPENSCAD_CMD} "$INPUT_CSG" -o "$OUT_FILE" $EXTRA_ARGS -D "\$colored = false; module color(c) {if (\$colored) {children();} else {\$colored = true; if (str(c) == \"${COLOR}\" || str(c) == \"${ALWAYS_COLOR}\") children(); }}" || 			
+		    echo "Warning: OpenSCAD failed with error $? when trying to generate '$OUT_FILE'. Proceeding regardless..."
 			# Don't treat this as fatal error, the model might just contain no geometry for this color
-		}
+	    }
 		if [ -s "$OUT_FILE" ]; then
 			echo "Finished at ${OUT_FILE}"
 		elif [ -e "$OUT_FILE" ]; then
@@ -297,8 +316,12 @@ for COLOR in $COLORS; do
 		# Wait for one job to finish, before continuing
 		wait_n
 	fi
-	# Run job in background, and prefix all terminal output with the job ID and color to show progress
-	render_color "$COLOR" | sed_u "s/^/${JOB_ID}\/${COLOR_COUNT} /" &
+	if [ "$COLOR" = "[0.184314, 0.309804, 0.309804, 1]]" ]; then
+	    echo "Ignoring darkslategrey"
+	else
+  	    #  Run job in background, and prefix all terminal output with the job ID and color to show progress
+	    render_color "$COLOR" | sed_u "s/^/${JOB_ID}\/${COLOR_COUNT} /" &
+	fi
 done
 # Wait for all remaining jobs to finish
 wait
@@ -318,9 +341,11 @@ if [ "$FORMAT" = amf ]; then
 		id=0
 		IFS=$'\n'
 		for COLOR in $COLORS; do
-			IFS=, read -r R G B A <<<"${COLOR//[\[\] ]/}"
-			echo " <material id=\"${id}\"><color><r>${R}</r><g>${G}</g><b>${B}</b><a>${A}</a></color></material>"
-			(( id++ )) || true
+			if [ "$COLOR" != "${IGNORE_COLOR}" ]; then
+				IFS=, read -r R G B A <<<"${COLOR//[\[\] ]/}"
+				echo " <material id=\"${id}\"><color><r>${R}</r><g>${G}</g><b>${B}</b><a>${A}</a></color></material>"
+				(( id++ ))
+			fi
 		done
 		id=0
 		IFS=$'\n'
