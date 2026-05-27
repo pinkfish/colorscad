@@ -155,6 +155,8 @@ jobs:
 
       - name: OpenSCAD nightly age check
         if: contains(matrix.name, 'nightly') && !matrix.skip-age-check
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           V=$(openscad --version 2>&1 | sed -n 's/^OpenSCAD version // p')
           IFS=. read Y M D x <<<"$V"
@@ -164,9 +166,12 @@ jobs:
             dt() { shift; date -d "$@"; }
           fi
           BUILD_DATE=$(dt '%F %T' "${Y}-${M}-${D:-01} 00:00:00" +%s)
-          dt @%s @${BUILD_DATE}
-          let AGE="($(date +%s)-${BUILD_DATE})/3600/24" || true
-          echo "Build age: ${AGE} days"
+          echo "Build date: $(dt @%s @${BUILD_DATE})"
+          # Reference: timestamp of most-recent commit on OpenSCAD master branch
+          REFERENCE_DATE=$(gh api repos/openscad/openscad/commits/master --jq '.commit.committer.date | fromdateiso8601')
+          echo "Reference date: $(dt @%s @${REFERENCE_DATE})"
+          let AGE='(REFERENCE_DATE-BUILD_DATE)/3600/24' || true
+          echo "Build age w.r.t. reference date: ${AGE} days"
           [[ "$AGE" -lt 30 ]]
 
       - name: Get OS release
