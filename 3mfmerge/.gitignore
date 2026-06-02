@@ -6,3 +6,5 @@ CPackSourceConfig.*
 Makefile
 CMakeFiles/*
 include/*
+_deps/*
+cmake_install.cmake
