@@ -1,2 +1,8 @@
 /bin/
 /build*/
+CMakeCache.txt
+CPackConfig.*
+CPackSourceConfig.*
+Makefile
+CMakeFiles/*
+include/*
