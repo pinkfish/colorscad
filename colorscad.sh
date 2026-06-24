@@ -155,9 +155,12 @@ if [ -e "$OUTPUT" ] && [ "$FORCE" -ne 1 ]; then
 fi
 
 FORMAT=${OUTPUT##*.}
-if [ "$FORMAT" != amf ] && [ "$FORMAT" != 3mf ]; then
-	echo "Error: the output file's extension must be one of 'amf' or '3mf', but it is '$FORMAT'."
+if [ "$FORMAT" != amf ] && [ "$FORMAT" != 3mf ] && [ "$FORMAT" != tmp ]; then
+	echo "Error: the output file's extension must be one of 'amf' or '3mf' or 'tmp', but it is '$FORMAT'."
 	exit 1
+fi
+if [ "$FORMAT" == tmp ]; then
+    FORMAT="3mf"
 fi
 
 
@@ -212,7 +215,7 @@ trap "rm -Rf '$(pwd)/${INPUT_CSG}' '$(pwd)/${TEMPDIR}'" EXIT
 if [ $VERBOSE -eq 1 ]; then
    echo "$OPENSCAD_CMD" "$INPUT" -o "$INPUT_CSG" ${OPENSCAD_EXTRA[@]+"${OPENSCAD_EXTRA[@]}"}
 fi
-"$OPENSCAD_CMD" "$INPUT" -o "$INPUT_CSG" ${OPENSCAD_EXTRA[@]+"${OPENSCAD_EXTRA[@]}"}
+"$OPENSCAD_CMD"  "$INPUT" -o "$INPUT_CSG" ${OPENSCAD_EXTRA[@]+"${OPENSCAD_EXTRA[@]}"}
 
 if ! [ -s "$INPUT_CSG" ]; then
 	echo "Error: the produced file '$INPUT_CSG' is empty. Looks like something went wrong..."
